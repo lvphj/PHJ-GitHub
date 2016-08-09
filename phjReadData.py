@@ -10,14 +10,21 @@
 #	data = phjReadData.phjReadDataFromExcelNamedCellRange('/Users/phil/Dropbox/Clarkson/phjDataweatheranalysis.xlsx', '2011 data', 'tides_data')
 
 
-def phjReadDataFromExcelNamedCellRange(phj_file_name, phj_sheet_name, phj_range_name, phj_datetime_format):
+#######################################################
+# Read data from a named cell range in Excel workbook #
+#######################################################
+def phjReadDataFromExcelNamedCellRange( phjExcelFileName,
+										phjExcelSheetName,
+										phjExcelRangeName,
+										phjDatetimeFormat = "%Y-%m-%d %H:%M:%S",
+										phjHeaderRow = False,
+										phjPrintResults = False):
+										
 	# This function reads data from a named cell range in an Excel spreadsheet (.xlsx).
-	# Input file_name (including path to file), sheet_name and range_name.
+	# Input phjExcelFileName (including path to file), phjExcelSheetName and phjExcelRangeName.
+	# Also input phjDatetimeFormat and phjPrintResults (default = False).
 	# If the function can find the correct cell range, it reads the data and returns
 	# it in the form of a pandas DataFrame.
-	
-	# Jan 2014
-	# --------
 	
 	# IMPORT REQUIRED PACKAGES
 	# ========================
@@ -31,24 +38,23 @@ def phjReadDataFromExcelNamedCellRange(phj_file_name, phj_sheet_name, phj_range_
 	# 		HAVE_PACKAGE = False
 	#
 	# Instead use the following method (as described at: http://developer.plone.org/reference_manuals/external/plone.api/contribute/conventions.html#about-imports)...
-	
+
 	import pkg_resources
-	
+
 	try:
 		pkg_resources.get_distribution('openpyxl')
 	except pkg_resources.DistributionNotFound:
-		print "Error: openpyxl package not available."
-		exit(0)
+		print("Error: openpyxl package not available.")
+		return False
 	else:
 		import openpyxl
-		from openpyxl.shared.exc import InvalidFileException
 
 
 	try:
 		pkg_resources.get_distribution('numpy')
 	except pkg_resources.DistributionNotFound:
-		print "Error: numpy package not available."
-		exit(0)
+		print("Error: numpy package not available.")
+		return False
 	else:
 		import numpy as np
 
@@ -56,153 +62,169 @@ def phjReadDataFromExcelNamedCellRange(phj_file_name, phj_sheet_name, phj_range_
 	try:
 		pkg_resources.get_distribution('pandas')
 	except pkg_resources.DistributionNotFound:
-		print "Error: pandas package not available."
-		exit(0)
+		print("Error: pandas package not available.")
+		return False
 	else:
 		import pandas as pd
 
-
-	from decimal import Decimal
-
+	
+	
 	
 	# LOAD DATA FROM EXCEL SPREADSHEET
 	# ================================
 	try:
-		# Load workbook. If unsuccessful, throws an InvalidFileException (imported in header)
-		workbook = openpyxl.load_workbook(filename = phj_file_name, data_only=True, use_iterators = True)
+		# Load phjTempWorkbook. If unsuccessful, throws an InvalidFileException (imported in header)
+		phjTempWorkbook = openpyxl.load_workbook(filename = phjExcelFileName, read_only = True, data_only = True)
 		
-	except InvalidFileException:
-		print "File named '" + filename + "' does not exist."
-		exit(0)
-		
-	# Look up worksheet by name. Function returns None if sheet of that name not found
-	worksheet = workbook.get_sheet_by_name(phj_sheet_name)
-		
-	if worksheet is None:
-		print "No such sheet in workbook."
-		exit(0)
-
-	# Get named range of cells. Function returns None if named_range not found...
-	cell_range = workbook.get_named_range(phj_range_name)
+	except FileNotFoundError:
+		print("File named '" + phjExcelFileName + "' does not exist.")
+		return None
 	
-	if cell_range is None:
-		print "No such named range of cells."
-		exit(0)
+	
+	try:
+		# Look up phjTempWorksheet by name. Function returns None if sheet of that name not found
+		phjTempWorksheet = phjTempWorkbook[phjExcelSheetName]
 		
-	print dir(cell_range)					# Get list of all iterable properties of object
-	print cell_range.destinations			# This gives a list containing tuples of worksheet names and cell ranges 
-	print cell_range.destinations[0]		# Give first tuple
-	print cell_range.destinations[0][1]		# Gives element [1] of tuple [0] i.e. the cell range
+	except KeyError:
+		print("Sheet named '" + phjExcelSheetName + "' not found in phjTempWorkbook.")
+		return None
+	
+	
+	# Get named range of cells. Function returns None if named_range not found...
+	phjTempCellRange = phjTempWorkbook.get_named_range(phjExcelRangeName)
+		
+	if phjTempCellRange == None:
+		print("Cell range named '" + phjExcelRangeName + "' not found in phjTempWorkbook.")
+		return None
+	
+	
+	if phjPrintResults == True:
+		print("\nList of iterable properties:")
+		print(dir(phjTempCellRange))						# Get list of all iterable properties of object
+		
+		print("\nList of tuples of named ranges and cell ranges")
+		print(phjTempCellRange.destinations)				# This gives a list containing tuples of worksheet names and cell ranges 
+		
+		print("\nFirst tuple of named ranges and cell range")
+		print(phjTempCellRange.destinations[0])				# Give first tuple
+		
+		print("\nCell range")
+		print(phjTempCellRange.destinations[0][1])			# Gives element [1] of tuple [0] i.e. the cell range
 
 	# Define list to store data...
-	imported_data = []
+	phjTempImportedData = []
 	
 	# Step through each row in cell range.
-	# (N.B. Cells returned by iter_rows() are not regular openpyxl.cell.Cell but openpyxl.reader.iter_worksheet.RawCell.)
-	for row in worksheet.iter_rows(cell_range.destinations[0][1]):
+	# (N.B. Cells returned by iter_rows() are not regular openpyxl.cell.cell.Cell but openpyxl.cell.read_only.ReadOnlyCell.)
+	for phjTempRow in phjTempWorksheet.iter_rows(phjTempCellRange.destinations[0][1]):
 
-		# Define temporary list to store values from cells in rows
-		tempdata=[]
+		# Define temporary list to store values from phjTempCells in phjTempRows
+		phjTempData=[]
 
-		# Step through each cell in row...
-		for cell in row:
-			# print cell.internal_value		# Can use for debugging purposes.
-			if cell.is_date:
-				# If the cell contains a date, the format of cell.internal_value is, for
-				# example, datetime.datetime(2011, 1, 1, 0, 0). Therefore, reformat to
+		# Step through each phjTempCell in phjTempRow...
+		for phjTempCell in phjTempRow:
+			if phjTempCell.is_date:
+				# If the phjTempCell contains a date, the format of phjTempCell.value is,
+				# for example, datetime.datetime(2011, 1, 1, 0, 0). Therefore, reformat
 				# using required format.
-				# tempdata.append(cell.internal_value.strftime("%d/%m/%Y %H:%M:%S"))
-				tempdata.append(cell.internal_value.strftime(phj_datetime_format))
+				phjTempData.append(phjTempCell.value.strftime(phjDatetimeFormat))
 	
-			elif cell.data_type == 's':		# TYPE_STRING = 's' AND TYPE_STRING_NULL = 's'
-				tempdata.append(cell.internal_value)
+			elif phjTempCell.data_type == 's':				# TYPE_STRING = 's' AND TYPE_STRING_NULL = 's'
+				phjTempData.append(phjTempCell.value)
 
-			elif cell.data_type == 'f':		# TYPE_FORMULA = 'f'
-				# Including 'data_only=True' in openpyxl.load_workbook() means that formulae aren't recognised as formulae, only the resulting value.
-				tempdata.append(cell.internal_value)
+			elif phjTempCell.data_type == 'f':				# TYPE_FORMULA = 'f'
+				# Including 'data_only=True' in openpyxl.load_phjTempWorkbook() means that formulae aren't recognised as formulae, only the resulting value.
+				phjTempData.append(phjTempCell.value)
 
-			elif cell.data_type == 'n':		# TYPE_NUMERIC = 'n'
-				# Check if cell is empty...
-				if cell.internal_value == None:
-					# tempdata.append('Empty')
-					tempdata.append(np.nan)
+			elif phjTempCell.data_type == 'n':				# TYPE_NUMERIC = 'n'
+				# Check if phjTempCell is empty...
+				if phjTempCell.value == None:
+					phjTempData.append(np.nan)
 					
 				else:
 					# Some decimal values cannot be stored exactly. The decimal module
 					# contains Decimal which helps with handling decimal values.
-					# tempdata.append(Decimal(cell.internal_value).quantize(Decimal('1.00')))
-					tempdata.append(cell.internal_value)
+					# phjTempData.append(Decimal(phjTempCell.internal_value).quantize(Decimal('1.00')))
+					phjTempData.append(phjTempCell.value)
 					
-			elif cell.data_type == 'b':		# TYPE_BOOL = 'b'
-				tempdata.append(cell.internal_value)
+			elif phjTempCell.data_type == 'b':				# TYPE_BOOL = 'b'
+				phjTempData.append(phjTempCell.value)
 
-			elif cell.data_type == 'inlineStr':		# TYPE_INLINE = 'inlineStr'
-				tempdata.append(cell.internal_value)
+			elif phjTempCell.data_type == 'inlineStr':		# TYPE_INLINE = 'inlineStr'
+				phjTempData.append(phjTempCell.value)
 
-			elif cell.data_type == 'e':		# TYPE_ERROR = 'e'
-				tempdata.append(cell.internal_value)
+			elif phjTempCell.data_type == 'e':				# TYPE_ERROR = 'e'
+				phjTempData.append(phjTempCell.value)
 
-			elif cell.data_type == 'str':		# TYPE_FORMULA_CACHE_STRING = 'str'
-				tempdata.append(cell.internal_value)
+			elif phjTempCell.data_type == 'str':			# TYPE_FORMULA_CACHE_STRING = 'str'
+				phjTempData.append(phjTempCell.value)
 
 			else:
-				tempdata.append("Unknown")
+				phjTempData.append("Unknown")
 				
-		imported_data.append(tuple(tempdata))
+		phjTempImportedData.append(tuple(phjTempData))
 	
-	variable_names = phjDealWithHeaderRow(imported_data)
+	phjTempVariableNames = phjDealWithHeaderRow(phjTempImportedData,
+												phjHeaderRow = phjHeaderRow,
+												phjPrintResults = phjPrintResults)
 	
 	# Convert dataset to pandas DataFrame.
 	# Each column now headed with original column headers as seen in Excel file
 	# if header row present or with generic labels of 'var1', 'var2', etc. if no
 	# header row present.
-	phj_data_frame = pd.DataFrame(imported_data, columns=variable_names)
 	
-	print phj_data_frame
+	phjTempDF = pd.DataFrame(phjTempImportedData, columns=phjTempVariableNames)
+	
+	if phjPrintResults == True:
+		print("\nImported data")
+		print("-------------")
+		print(phjTempDF)
 
-	return (phj_data_frame, variable_names)
+	return phjTempDF
 
 
-def phjDealWithHeaderRow(data):
+
+
+def phjDealWithHeaderRow(phjData,
+						 phjHeaderRow = False,
+						 phjPrintResults = False):
 	# This function gets the variable names from the first row of data and
 	# removes the header row from the data list. The data is passed by
 	# references and, therefore, it can be mutated without having to make
 	# a copy of the whole dataset.
 	
-	# Jan 2014
-	# --------
-	
-	# Deal with headers in first row...
-	header = raw_input("Does first row of data include header names? (y/n): ")
-
-	if header == "y":
-		# Identify variable names from first row of data...
-		variable_names = data[0]
+	# Deal with headers in first phjTempRow...
+	if phjHeaderRow:
+		# Identify variable names from first phjTempRow of data...
+		phjTempVariableNames = phjData[0]
 		
 		# Remove header names from data...
-		del data[0]
+		del phjData[0]
 		
-		print "First row (containing variable names) has been removed from the data."
+		if phjPrintResults == True:
+			print("\nFirst row (containing variable names) has been removed from the data.")
 		
 	else:
-		variable_names = []
-		for i in range (len(data[0])):
-			variable_names.append('var'+str(i+1))
-			
-	# Print variable names - just for reference...
-	for i in range (len(variable_names)):
-		print "var",i+1,": ",variable_names[i]
+		# If first row doesn't contain variable names then create list of names var1, var2, etc.
+		phjTempVariableNames = []
+		for i in range (len(phjData[0])):
+			phjTempVariableNames.append('var'+str(i+1))
 	
-	print ''
-		
-	return variable_names
+	if phjPrintResults == True:	
+		# Print variable names - just for reference...
+		for i in range (len(phjTempVariableNames)):
+			print("var",i+1,": ",phjTempVariableNames[i])
+	
+	return phjTempVariableNames
 
 
 
-def phjDataReadFromStata(stataFileName):
 
-#	4 Feb 2014
-#	----------
+####################################
+# Read data from an Stata datafile #
+####################################
+def phjDataReadFromStata(phjStataFileName,
+						 phjPrintResults = False):
 
 # The following method to check that a package is available is not considered to be
 # good practice:
@@ -215,24 +237,6 @@ def phjDataReadFromStata(stataFileName):
 #
 # Instead use the following method (as described at: http://developer.plone.org/reference_manuals/external/plone.api/contribute/conventions.html#about-imports)...
 	
-	import pkg_resources
-	
-	try:
-		pkg_resources.get_distribution('numpy')
-	except pkg_resources.DistributionNotFound:
-		print "Numpy package not available."
-		exit(0)
-	else:
-		import numpy as np
-		
-	try:
-		pkg_resources.get_distribution('pandas')
-	except pkg_resources.DistributionNotFound:
-		print "Pandas package not available."
-		exit(0)
-	else:
-		import pandas as pd
-
 #	The Pandas I/O api is a set of top level reader functions accessed
 #	like pd.read_csv() that generally return a pandas object.
 #	(See: http://pandas.pydata.org/pandas-docs/stable/io.html)
@@ -257,16 +261,19 @@ def phjDataReadFromStata(stataFileName):
 #		index : identifier of index column
 #			identifier of column that should be used as index of the DataFrame
 	
-	print stataFileName
+	if phjPrintResults:
+		print('\nStata filename: ',phjStataFileName)
 	
 	try:
-		phjStataData = pd.read_stata(stataFileName, convert_dates=True, convert_categoricals=True, encoding=None, index=None)
+		phjStataData = pd.read_stata(phjStataFileName, convert_dates=True, convert_categoricals=True, encoding=None, index=None)
 	except:		# Catch all exceptions
 #		e = sys.exc_info()[0]
-		print "An error occurred reading data from Stata file."
+		print("An error occurred reading data from Stata file.")
 		exit(0)
-
-	print phjStataData
+	
+	if phjPrintResults:
+		print(phjStataData)
+		
 	return phjStataData
 
 
@@ -274,10 +281,9 @@ def phjDataReadFromStata(stataFileName):
 #################################
 # Read data from an R workspace #
 #################################
-def phjReadDataFromR(phjPathToNewWorkingDirectory, phjRData):
-
-#	4 Feb 2014
-#	----------
+def phjReadDataFromR(phjPathToNewWorkingDirectory,
+					 phjRData,
+					 phjPrintResults = False):
 
 # The following method to check that a package is available is not considered to be
 # good practice:
@@ -291,19 +297,11 @@ def phjReadDataFromR(phjPathToNewWorkingDirectory, phjRData):
 # Instead use the following method (as described at: http://developer.plone.org/reference_manuals/external/plone.api/contribute/conventions.html#about-imports)...
 	
 	import pkg_resources
-	
-	try:
-		pkg_resources.get_distribution('numpy')
-	except pkg_resources.DistributionNotFound:
-		print "Numpy package not available."
-		exit(0)
-	else:
-		import numpy as np
-		
+			
 	try:
 		pkg_resources.get_distribution('pandas')
 	except pkg_resources.DistributionNotFound:
-		print "Pandas package not available."
+		print("Pandas package not available.")
 		exit(0)
 	else:
 		import pandas as pd
@@ -312,15 +310,15 @@ def phjReadDataFromR(phjPathToNewWorkingDirectory, phjRData):
 	try:
 		pkg_resources.get_distribution('rpy2')
 	except pkg_resources.DistributionNotFound:
-		print "rpy2 package not available."
+		print("rpy2 package not available.")
 		exit(0)
 	else:
 		import rpy2.robjects as robjects
 		
 	
-	print robjects.r("setwd('"+phjPathToNewWorkingDirectory+"')")
+	print(robjects.r("setwd('"+phjPathToNewWorkingDirectory+"')"))
 	
-	print robjects.r.load(".RData")
+	print(robjects.r.load(".RData"))
 	
 	myRData = com.load_data(phjRData)
 	
