@@ -1,22 +1,22 @@
 # This home-made modules contains functions to import data from various sources.
 # In order to get Python to see the module, added following to .bash_profile or .bashrc:
 #
-# PYTHONPATH=$PYTHONPATH:/Users/phil/Dropbox/phjPythonModules; export PYTHONPATH
+# PYTHONPATH=$PYTHONPATH:/path/to/folder; export PYTHONPATH
 #
 # To use the functions in this module, import phjReadData and refer to functions using:
-# data = phjReadData.function_name(arg)
+# df = phjReadData.function_name(arg)
 #
 # e.g.
-#	data = phjReadData.phjReadDataFromExcelNamedCellRange('/Users/phil/Dropbox/Clarkson/phjDataweatheranalysis.xlsx', '2011 data', 'tides_data')
+# df = phjReadData.phjReadDataFromExcelNamedCellRange('/Users/phil/Dropbox/Clarkson/phjDataweatheranalysis.xlsx', '2011 data', 'tides_data')
 
 
 #######################################################
 # Read data from a named cell range in Excel workbook #
 #######################################################
 def phjReadDataFromExcelNamedCellRange( phjExcelFileName,
-										phjExcelSheetName,
 										phjExcelRangeName,
 										phjDatetimeFormat = "%Y-%m-%d %H:%M:%S",
+										phjMissingValue = "missing",
 										phjHeaderRow = False,
 										phjPrintResults = False):
 										
@@ -38,9 +38,9 @@ def phjReadDataFromExcelNamedCellRange( phjExcelFileName,
 	# 		HAVE_PACKAGE = False
 	#
 	# Instead use the following method (as described at: http://developer.plone.org/reference_manuals/external/plone.api/contribute/conventions.html#about-imports)...
-
+	
 	import pkg_resources
-
+	
 	try:
 		pkg_resources.get_distribution('openpyxl')
 	except pkg_resources.DistributionNotFound:
@@ -48,8 +48,8 @@ def phjReadDataFromExcelNamedCellRange( phjExcelFileName,
 		return False
 	else:
 		import openpyxl
-
-
+	
+	
 	try:
 		pkg_resources.get_distribution('numpy')
 	except pkg_resources.DistributionNotFound:
@@ -66,27 +66,17 @@ def phjReadDataFromExcelNamedCellRange( phjExcelFileName,
 		return False
 	else:
 		import pandas as pd
-
 	
 	
+	import re
 	
-	# LOAD DATA FROM EXCEL SPREADSHEET
-	# ================================
+	# LOAD DATA FROM EXCEL WORKBOOK
+	# =============================
 	try:
 		# Load phjTempWorkbook. If unsuccessful, throws an InvalidFileException (imported in header)
 		phjTempWorkbook = openpyxl.load_workbook(filename = phjExcelFileName, read_only = True, data_only = True)
-		
 	except FileNotFoundError:
 		print("File named '" + phjExcelFileName + "' does not exist.")
-		return None
-	
-	
-	try:
-		# Look up phjTempWorksheet by name. Function returns None if sheet of that name not found
-		phjTempWorksheet = phjTempWorkbook[phjExcelSheetName]
-		
-	except KeyError:
-		print("Sheet named '" + phjExcelSheetName + "' not found in phjTempWorkbook.")
 		return None
 	
 	
@@ -96,6 +86,20 @@ def phjReadDataFromExcelNamedCellRange( phjExcelFileName,
 	if phjTempCellRange == None:
 		print("Cell range named '" + phjExcelRangeName + "' not found in phjTempWorkbook.")
 		return None
+	
+	
+	# Get name of worksheet from cell range instance
+	# The cellrange.destinations is given as a list of tuples of the form:
+	#
+	#     [(<ReadOnlyWorksheet "Sheet1">, '$A$1:$D$100')]
+	#
+	# The first item in the first tuple is found using cellrange.destinations[0][0].
+	# This needs to be converted to a string and a regular expression used to find the
+	# text between the double quotation marks. The result is returned as a list (although,
+	# in this case, there is only a single item). The first item is returned and
+	# converted to a string. This can then be used to get a Worksheet instance.
+	phjTempWorksheetName = str(re.findall(r'\"(.+?)\"',str(phjTempCellRange.destinations[0][0]))[0])
+	phjTempWorksheet = phjTempWorkbook[phjTempWorksheetName]
 	
 	
 	if phjPrintResults == True:
@@ -111,59 +115,60 @@ def phjReadDataFromExcelNamedCellRange( phjExcelFileName,
 		print("\nCell range")
 		print(phjTempCellRange.destinations[0][1])			# Gives element [1] of tuple [0] i.e. the cell range
 
-	# Define list to store data...
+		print("\nLocal Sheet ID")
+		print(phjTempCellRange.destinations[0][0])			# Gives element [1] of tuple [0] i.e. the cell range
+
+	
+	# Define temporary list to store data...
 	phjTempImportedData = []
 	
 	# Step through each row in cell range.
 	# (N.B. Cells returned by iter_rows() are not regular openpyxl.cell.cell.Cell but openpyxl.cell.read_only.ReadOnlyCell.)
 	for phjTempRow in phjTempWorksheet.iter_rows(phjTempCellRange.destinations[0][1]):
-
+	
 		# Define temporary list to store values from phjTempCells in phjTempRows
 		phjTempData=[]
-
+		
 		# Step through each phjTempCell in phjTempRow...
 		for phjTempCell in phjTempRow:
-			if phjTempCell.is_date:
-				# If the phjTempCell contains a date, the format of phjTempCell.value is,
-				# for example, datetime.datetime(2011, 1, 1, 0, 0). Therefore, reformat
-				# using required format.
-				phjTempData.append(phjTempCell.value.strftime(phjDatetimeFormat))
-	
-			elif phjTempCell.data_type == 's':				# TYPE_STRING = 's' AND TYPE_STRING_NULL = 's'
-				phjTempData.append(phjTempCell.value)
-
-			elif phjTempCell.data_type == 'f':				# TYPE_FORMULA = 'f'
-				# Including 'data_only=True' in openpyxl.load_phjTempWorkbook() means that formulae aren't recognised as formulae, only the resulting value.
-				phjTempData.append(phjTempCell.value)
-
-			elif phjTempCell.data_type == 'n':				# TYPE_NUMERIC = 'n'
-				# Check if phjTempCell is empty...
-				if phjTempCell.value == None:
-					phjTempData.append(np.nan)
-					
-				else:
-					# Some decimal values cannot be stored exactly. The decimal module
-					# contains Decimal which helps with handling decimal values.
+			if phjTempCell.value == None:
+				phjTempData.append(phjMissingValue)
+			
+			else:
+				if phjTempCell.is_date:
+					# If the phjTempCell contains a date, the format of phjTempCell.value is,
+					# for example, datetime.datetime(2011, 1, 1, 0, 0). Therefore, reformat
+					# using required format.
+					phjTempData.append(phjTempCell.value.strftime(phjDatetimeFormat))
+			
+				elif phjTempCell.data_type == 's':				# TYPE_STRING = 's' AND TYPE_STRING_NULL = 's'
+					phjTempData.append(phjTempCell.value)
+			
+				elif phjTempCell.data_type == 'f':				# TYPE_FORMULA = 'f'
+					# Including 'data_only=True' in openpyxl.load_phjTempWorkbook() means that formulae aren't recognised as formulae, only the resulting value.
+					phjTempData.append(phjTempCell.value)
+			
+				elif phjTempCell.data_type == 'n':				# TYPE_NUMERIC = 'n'
 					# phjTempData.append(Decimal(phjTempCell.internal_value).quantize(Decimal('1.00')))
 					phjTempData.append(phjTempCell.value)
 					
-			elif phjTempCell.data_type == 'b':				# TYPE_BOOL = 'b'
-				phjTempData.append(phjTempCell.value)
-
-			elif phjTempCell.data_type == 'inlineStr':		# TYPE_INLINE = 'inlineStr'
-				phjTempData.append(phjTempCell.value)
-
-			elif phjTempCell.data_type == 'e':				# TYPE_ERROR = 'e'
-				phjTempData.append(phjTempCell.value)
-
-			elif phjTempCell.data_type == 'str':			# TYPE_FORMULA_CACHE_STRING = 'str'
-				phjTempData.append(phjTempCell.value)
-
-			else:
-				phjTempData.append("Unknown")
+				elif phjTempCell.data_type == 'b':				# TYPE_BOOL = 'b'
+					phjTempData.append(phjTempCell.value)
+			
+				elif phjTempCell.data_type == 'inlineStr':		# TYPE_INLINE = 'inlineStr'
+					phjTempData.append(phjTempCell.value)
+				
+				elif phjTempCell.data_type == 'e':				# TYPE_ERROR = 'e'
+					phjTempData.append(phjTempCell.value)
+			
+				elif phjTempCell.data_type == 'str':			# TYPE_FORMULA_CACHE_STRING = 'str'
+					phjTempData.append(phjTempCell.value)
+			
+				else:
+					phjTempData.append(phjTempCell.value)
 				
 		phjTempImportedData.append(tuple(phjTempData))
-	
+		
 	phjTempVariableNames = phjDealWithHeaderRow(phjTempImportedData,
 												phjHeaderRow = phjHeaderRow,
 												phjPrintResults = phjPrintResults)
